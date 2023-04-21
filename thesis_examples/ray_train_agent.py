@@ -8,6 +8,7 @@ import cv2
 import yaml
 import wandb
 import ray
+import argparse
 
 from ray.rllib.agents.ppo import PPOTrainer
 from ray_wrapper import RayWrapper
@@ -41,73 +42,6 @@ def policy_mapping_fn(agent_id,episode,worker,**kwargs):
     pol_id = agent_id
     return pol_id
 
-register_env("my_env",env_creator)
-
-
-
-epochs = 100000
-rollout_fragment_length = 1000
-params = {"epochs": epochs,
-          "rollout_fragment_length": rollout_fragment_length} #TODO(christine.ohenzuwa): add command line args using python argparse
-# https://docs.python.org/3/library/argparse.html
-
-
-wandb.init(
-    # Set the project where this run will be logged
-    project="population-learning",
-    # Track hyperparameters and run metadata
-    config=params)
-
-#creating different policies for different agents...not sure if this is necessary since all agents have the same
-#rewards and tasks
-#also not very programatic
-policies = {
-
-    "A": PolicySpec(policy_class = None, observation_space = None, action_space = None, config = None),
-    "B": PolicySpec(policy_class = None, observation_space = None, action_space = None, config = None),
-    "C":PolicySpec(policy_class = None, observation_space = None, action_space = None, config = None),
-    "D":PolicySpec(policy_class = None, observation_space = None, action_space = None, config = None)
-
-}
-config = PPOConfig().framework("torch").rollouts(rollout_fragment_length=params["rollout_fragment_length"])
-config = config.environment(env = "my_env", env_config ={"num_agents": 4})
-config = config.multi_agent(policies = policies,
-                            policy_mapping_fn = policy_mapping_fn)
-
-
-
-algo = config.build()
-checkpoint = 10
-for epoch in range(params["epochs"]):
-    # Train the model for (1?) epoch with a pre-specified rollout fragment length (how many rollouts?).
-    results = algo.train()
-    #print(pretty_print(results))
-
-    # Log the results
-    log_dict = {}  # reset the log dict
-    results_top_level_stats = {"stats/" + k:v for (k,v) in results.items() if k != "info" and type(v) is not dict}
-    results_info_stats = {"info/" + k:v for (k,v) in results["info"].items() if k != "learner" and type(v) is not dict}
-    for d in [results_info_stats, results_top_level_stats]:
-        log_dict.update(d)
-    for agent_prefix, agent_dict in results["info"]["learner"].items():
-        learner_stats = {"learner_agent_" + agent_prefix + "/" + k:v for (k,v) in agent_dict["learner_stats"].items()}
-        log_dict.update(learner_stats)
-    if epoch % 10 == 0:
-        checkpoint = algo.save("/home/christine/trained_models")
-        log_dict["checkpoint"] = checkpoint
-    wandb.log(log_dict)
-
-
-
-
-env = gymnasium.make(
-        id='MultiAgentRaceEnv-v0',
-        scenario='../scenarios/austria_het.yml',
-        render_mode="human",
-        #render_options=dict(width=320, height=240, agent='A')
-    )
-
-ray_env = RayWrapper(env)
 
 #function for simulating agents with a trained model, also collect a dictionary of trajectories for the agent
 def simulate(ray_env,algo,eps):
@@ -169,12 +103,6 @@ def simulate(ray_env,algo,eps):
     return trajectories
 
 
-checkpoint_path = "/home/christine/trained_models/checkpoint_001051"
-algo = Algorithm.from_checkpoint(checkpoint_path)
-#vids = simulate(ray_env,algo,1)
-trajectories = simulate(ray_env,algo,10)
-
-
 #assume the input is a set of images representing one video --> not working
 def createvideo(vid):
     episode = 1
@@ -191,3 +119,109 @@ def save_trajs(trajectories,filepath = "test.yml"):
     yaml.dump(trajectories,file)
     file.close()
     print("trajectories file saved")
+
+
+def train(algo,checkpoint_num,epochs):
+    for epoch in range(epochs):
+        # Train the model for (1?) epoch with a pre-specified rollout fragment length (how many rollouts?).
+        results = algo.train()
+        #print(pretty_print(results))
+
+        # Log the results
+        log_dict = {}  # reset the log dict
+        results_top_level_stats = {"stats/" + k:v for (k,v) in results.items() if k != "info" and type(v) is not dict}
+        results_info_stats = {"info/" + k:v for (k,v) in results["info"].items() if k != "learner" and type(v) is not dict}
+        for d in [results_info_stats, results_top_level_stats]:
+            log_dict.update(d)
+        for agent_prefix, agent_dict in results["info"]["learner"].items():
+            learner_stats = {"learner_agent_" + agent_prefix + "/" + k:v for (k,v) in agent_dict["learner_stats"].items()}
+            log_dict.update(learner_stats)
+        if epoch % checkpoint_num == 0:
+            checkpoint = algo.save("/home/christine/trained_models/0420")
+            log_dict["checkpoint"] = checkpoint
+        wandb.log(log_dict)
+
+
+def run():
+
+    register_env("my_env",env_creator)
+
+    #working on parser
+
+    parser = argparse.ArgumentParser(description= "simulating and training MARL environment")
+    parser.add_argument("--rollout_fragment_length", default = 'auto')
+    parser.add_argument("--epochs", type = int, default = 1000)
+    parser.add_argument("--train", type = bool, default = True, help = "if true, train model")
+    parser.add_argument("--checkpoint", type = int, default = 10, help = "number of timsteps to wait before saving model while training")
+    parser.add_argument("--simulate", type = bool, default = False, help = "if true, simulate agents actions")
+    parser.add_argument("--saved_model", type = str, default = None, help = "filepath of saved model to simulate agent actions from")
+
+    #also add render_mode, save_video, video_fp
+    #fp --> filepath
+
+
+    epochs = 100000
+    rollout_fragment_length = 'auto'
+    params = {"epochs": epochs,
+              "rollout_fragment_length": rollout_fragment_length} #TODO(christine.ohenzuwa): add command line args using python argparse
+    # https://docs.python.org/3/library/argparse.html
+
+
+    wandb.init(
+        # Set the project where this run will be logged
+        project="population-learning",
+        # Track hyperparameters and run metadata
+        config=params)
+
+    #creating different policies for different agents...not sure if this is necessary since all agents have the same
+    #rewards and tasks
+    #also not very programatic
+    policies = {
+
+        "A": PolicySpec(policy_class = None, observation_space = None, action_space = None, config = None),
+        "B": PolicySpec(policy_class = None, observation_space = None, action_space = None, config = None),
+        "C":PolicySpec(policy_class = None, observation_space = None, action_space = None, config = None),
+        "D":PolicySpec(policy_class = None, observation_space = None, action_space = None, config = None)
+
+    }
+    config = PPOConfig().framework("torch").rollouts(rollout_fragment_length=params["rollout_fragment_length"])
+    config = config.environment(env = "my_env", env_config ={"num_agents": 4})
+    config = config.multi_agent(policies = policies,
+                                policy_mapping_fn = policy_mapping_fn)
+    #adding more workers for parallelization
+    config = config.rollouts(num_rollout_workers = 5)
+
+
+
+    algo = config.build()
+    checkpoint_num = 10
+    checkpoint_path = "/home/christine/trained_models/checkpoint_001051"
+    algo = Algorithm.from_checkpoint(checkpoint_path)
+
+    #all the stuff above happens on every run of this file
+
+    # param true or false check would go here
+    train(algo,checkpoint_num,params["epochs"])
+
+    #another boolean check would go here --> for simulate I guess
+    #this could go inside the simulate func I think
+    env = gymnasium.make(
+            id='MultiAgentRaceEnv-v0',
+            scenario='../scenarios/austria_het.yml',
+            render_mode="human",
+            #render_options=dict(width=320, height=240, agent='A')
+        )
+
+    ray_env = RayWrapper(env)
+
+    checkpoint_path = "/home/christine/trained_models/checkpoint_001051"
+    algo = Algorithm.from_checkpoint(checkpoint_path)
+    #vids = simulate(ray_env,algo,1)
+    #trajectories = simulate(ray_env,algo,10)
+
+    #more checks for writing trajectories and rendering videos go here
+
+
+
+if __name__ == "__main__":
+    run()
