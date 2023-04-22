@@ -99,6 +99,8 @@ class RayWrapper(MultiAgentEnv):
         #flattening the observations for rllib
         flat_obs = {}
         for key in self._env.possible_agents:
+            #skip done agents
+            if dones[key]: continue
             flat_obs[key] = flatten_obs(observations[key])
             flat_obs[key] = flat_obs[key].astype(np.float64)
 

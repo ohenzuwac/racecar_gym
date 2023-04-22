@@ -9,6 +9,8 @@ import yaml
 import wandb
 import ray
 import argparse
+import pandas as pd
+import os
 
 from ray.rllib.agents.ppo import PPOTrainer
 from ray_wrapper import RayWrapper
@@ -23,6 +25,7 @@ from dictionary_space_utility import flatten_obs
 from ray.rllib.algorithms.algorithm import Algorithm
 from time import sleep
 from collections import defaultdict
+from agent_traits import assign_traits
 
 
 
@@ -30,7 +33,7 @@ from collections import defaultdict
 def env_creator(env_config):
     env = gymnasium.make(
         id='MultiAgentRaceEnv-v0',
-        scenario='../scenarios/austria_het.yml',
+        scenario='../scenarios/8agent_austria_het.yml',
         render_mode="rgb_array_follow"
     )
 
@@ -44,10 +47,20 @@ def policy_mapping_fn(agent_id,episode,worker,**kwargs):
 
 
 #function for simulating agents with a trained model, also collect a dictionary of trajectories for the agent
-def simulate(ray_env,algo,eps):
+def simulate(algo,eps):
+    env = gymnasium.make(
+        id='MultiAgentRaceEnv-v0',
+        scenario='../scenarios/8agent_austria_het.yml',
+        render_mode="human",
+        # render_options=dict(width=320, height=240, agent='A')
+    )
+    ray_env = RayWrapper(env)
+
     policy_agent_mapping = algo.config['multiagent']['policy_mapping_fn']
     video_array = []
     trajectories = {}
+
+
     for episode in range(eps):
         trajectories['Episode{}'.format(episode)] = {}
         print('Episode: {}'.format(episode))
@@ -68,6 +81,7 @@ def simulate(ray_env,algo,eps):
             # Get actions from policies
             joint_action = {}
             for agent_id, agent_obs in obs.items():
+                #print(done[agent_id],agent_id)
                 if done[agent_id]: continue # Don't get actions for done agents
                 policy_id = policy_agent_mapping(agent_id,episode,None)
                 action = algo.compute_single_action(agent_obs, policy_id=policy_id)
@@ -78,16 +92,22 @@ def simulate(ray_env,algo,eps):
             # Step the simulation
             obs, reward, done, truncated, info = ray_env.step(joint_action)
 
-            for agent_id in obs.keys():
-                traj['x_pos_{}'.format(agent_id)].append(info[agent_id]['pose'][0])
-                traj['y_pos_{}'.format(agent_id)].append(info[agent_id]['pose'][1])
-                traj['yaw_pos_{}'.format(agent_id)].append(info[agent_id]['pose'][5])
+            for agent_id in ray_env.agents:
+                #need to have a catch here for done agents --> append the information when the agent last active
+                if agent_id not in obs.keys():
+                    traj['x_pos_{}'.format(agent_id)].append(traj['x_pos_{}'.format(agent_id)][-1])
+                    traj['y_pos_{}'.format(agent_id)].append(traj['y_pos_{}'.format(agent_id)][-1])
+                    traj['yaw_pos_{}'.format(agent_id)].append(traj['yaw_pos_{}'.format(agent_id)][-1])
+                else:
+                    traj['x_pos_{}'.format(agent_id)].append(info[agent_id]['pose'][0])
+                    traj['y_pos_{}'.format(agent_id)].append(info[agent_id]['pose'][1])
+                    traj['yaw_pos_{}'.format(agent_id)].append(info[agent_id]['pose'][5])
 
             timesteps.append(timestep)
             timestep = timestep + 1
 
             #rgb_array = ray_env.render()
-            #ray_env.render()
+            ray_env.render()
             #transfer to BGR for openCV
 
             #img_array.append(cv2.cvtColor(rgb_array, cv2.COLOR_RGB2BGR))
@@ -97,6 +117,9 @@ def simulate(ray_env,algo,eps):
 
             if done['__all__']:
                 #video_array.append(img_array)
+
+                print("done!!")
+
                 trajectories['Episode{}'.format(episode)] = traj
                 trajectories['Episode{}'.format(episode)]['timesteps'] = timesteps
                 break
@@ -113,15 +136,21 @@ def createvideo(vid):
 
     out.release()
 
-#takes a dictiionary containing trajectories and saves them to yml file
-def save_trajs(trajectories,filepath = "test.yml"):
-    file = open(filepath,"w")
-    yaml.dump(trajectories,file)
-    file.close()
-    print("trajectories file saved")
+
+#takes a dictionary containing trajedctories and save them to csv file using pandas
+def save_trajs(trajectories,filepath = "/home/christine/thesis_trajectories"):
+
+    #loop through the trajs
+    for episode in trajectories.keys():
+        filename = "episode{}".format(episode)
+        file = os.path.join(filepath,filename)
+        df = pd.DataFrame(trajectories[episode])
+        df.to_csv(file)
 
 
 def train(algo,checkpoint_num,epochs):
+    #randomize max velocity and max steering angles
+    assign_traits()
     for epoch in range(epochs):
         # Train the model for (1?) epoch with a pre-specified rollout fragment length (how many rollouts?).
         results = algo.train()
@@ -137,7 +166,7 @@ def train(algo,checkpoint_num,epochs):
             learner_stats = {"learner_agent_" + agent_prefix + "/" + k:v for (k,v) in agent_dict["learner_stats"].items()}
             log_dict.update(learner_stats)
         if epoch % checkpoint_num == 0:
-            checkpoint = algo.save("/home/christine/trained_models/0420")
+            checkpoint = algo.save("/home/christine/trained_models/0421")
             log_dict["checkpoint"] = checkpoint
         wandb.log(log_dict)
 
@@ -181,11 +210,16 @@ def run():
         "A": PolicySpec(policy_class = None, observation_space = None, action_space = None, config = None),
         "B": PolicySpec(policy_class = None, observation_space = None, action_space = None, config = None),
         "C":PolicySpec(policy_class = None, observation_space = None, action_space = None, config = None),
-        "D":PolicySpec(policy_class = None, observation_space = None, action_space = None, config = None)
+        "D":PolicySpec(policy_class = None, observation_space = None, action_space = None, config = None),
+        "E": PolicySpec(policy_class=None, observation_space=None, action_space=None, config=None),
+        "F": PolicySpec(policy_class=None, observation_space=None, action_space=None, config=None),
+        "G": PolicySpec(policy_class=None, observation_space=None, action_space=None, config=None),
+        "H": PolicySpec(policy_class=None, observation_space=None, action_space=None, config=None),
+        "I": PolicySpec(policy_class=None, observation_space=None, action_space=None, config=None)
 
     }
     config = PPOConfig().framework("torch").rollouts(rollout_fragment_length=params["rollout_fragment_length"])
-    config = config.environment(env = "my_env", env_config ={"num_agents": 4})
+    config = config.environment(env = "my_env")
     config = config.multi_agent(policies = policies,
                                 policy_mapping_fn = policy_mapping_fn)
     #adding more workers for parallelization
@@ -195,8 +229,8 @@ def run():
 
     algo = config.build()
     checkpoint_num = 10
-    checkpoint_path = "/home/christine/trained_models/checkpoint_001051"
-    algo = Algorithm.from_checkpoint(checkpoint_path)
+    #checkpoint_path = "/home/christine/trained_models/checkpoint_001051"
+    #algo = Algorithm.from_checkpoint(checkpoint_path)
 
     #all the stuff above happens on every run of this file
 
@@ -204,23 +238,13 @@ def run():
     train(algo,checkpoint_num,params["epochs"])
 
     #another boolean check would go here --> for simulate I guess
-    #this could go inside the simulate func I think
-    env = gymnasium.make(
-            id='MultiAgentRaceEnv-v0',
-            scenario='../scenarios/austria_het.yml',
-            render_mode="human",
-            #render_options=dict(width=320, height=240, agent='A')
-        )
 
-    ray_env = RayWrapper(env)
-
-    checkpoint_path = "/home/christine/trained_models/checkpoint_001051"
-    algo = Algorithm.from_checkpoint(checkpoint_path)
-    #vids = simulate(ray_env,algo,1)
-    #trajectories = simulate(ray_env,algo,10)
+    #checkpoint_path = "/home/christine/trained_models/0421/checkpoint_000001"
+    #algo = Algorithm.from_checkpoint(checkpoint_path)
+    #trajectories = simulate(algo,2)
+    #save_trajs(trajectories)
 
     #more checks for writing trajectories and rendering videos go here
-
 
 
 if __name__ == "__main__":
