@@ -167,7 +167,7 @@ def train(algo,checkpoint_num,epochs):
             learner_stats = {"learner_agent_" + agent_prefix + "/" + k:v for (k,v) in agent_dict["learner_stats"].items()}
             log_dict.update(learner_stats)
         if epoch % checkpoint_num == 0:
-            checkpoint = algo.save("/home/christine/trained_models/0422")
+            checkpoint = algo.save("/home/christine/racecar_gym/trained_models/0423")
             log_dict["checkpoint"] = checkpoint
         wandb.log(log_dict)
 
@@ -240,7 +240,7 @@ def run():
 
     #another boolean check would go here --> for simulate I guess
 
-    checkpoint_path = "/home/christine/trained_models/0422/checkpoint_000211"
+    checkpoint_path = "/home/christine/racecar_gym/trained_models/0422/checkpoint_000211"
     algo = Algorithm.from_checkpoint(checkpoint_path)
     trajectories = simulate(algo,2)
     #save_trajs(trajectories)
