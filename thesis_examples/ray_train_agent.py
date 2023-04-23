@@ -228,21 +228,21 @@ def run():
 
 
 
-    #algo = config.build()
-    #checkpoint_num = 10
-    #checkpoint_path = "/home/christine/trained_models/0421/checkpoint_000381"
-   # algo = Algorithm.from_checkpoint(checkpoint_path)
+    algo = config.build()
+    checkpoint_num = 1000
+    checkpoint_path = "/home/christine/racecar_gym/trained_models/0422/checkpoint_000211"
+    algo = Algorithm.from_checkpoint(checkpoint_path)
 
     #all the stuff above happens on every run of this file
 
     # param true or false check would go here
-    #train(algo,checkpoint_num,params["epochs"])
+    train(algo,checkpoint_num,params["epochs"])
 
     #another boolean check would go here --> for simulate I guess
 
-    checkpoint_path = "/home/christine/racecar_gym/trained_models/0422/checkpoint_000211"
-    algo = Algorithm.from_checkpoint(checkpoint_path)
-    trajectories = simulate(algo,2)
+    #checkpoint_path = "/home/christine/racecar_gym/trained_models/0422/checkpoint_000211"
+    #algo = Algorithm.from_checkpoint(checkpoint_path)
+    #trajectories = simulate(algo,2)
     #save_trajs(trajectories)
 
     #more checks for writing trajectories and rendering videos go here
