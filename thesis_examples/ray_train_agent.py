@@ -82,7 +82,7 @@ def simulate(algo,eps):
             joint_action = {}
             for agent_id, agent_obs in obs.items():
                 #print(done[agent_id],agent_id)
-                if done[agent_id]: continue # Don't get actions for done agents
+                #if done[agent_id]: continue # Don't get actions for done agents
                 policy_id = policy_agent_mapping(agent_id,episode,None)
                 action = algo.compute_single_action(agent_obs, policy_id=policy_id)
                 joint_action[agent_id] = action
@@ -99,15 +99,16 @@ def simulate(algo,eps):
                     traj['y_pos_{}'.format(agent_id)].append(traj['y_pos_{}'.format(agent_id)][-1])
                     traj['yaw_pos_{}'.format(agent_id)].append(traj['yaw_pos_{}'.format(agent_id)][-1])
                 else:
-                    traj['x_pos_{}'.format(agent_id)].append(info[agent_id]['pose'][0])
-                    traj['y_pos_{}'.format(agent_id)].append(info[agent_id]['pose'][1])
-                    traj['yaw_pos_{}'.format(agent_id)].append(info[agent_id]['pose'][5])
+                    #append the observed pose information for each agent
+                    traj['x_pos_{}'.format(agent_id)].append(info[agent_id]['observations']['pose'][0])
+                    traj['y_pos_{}'.format(agent_id)].append(info[agent_id]['observations']['pose'][1])
+                    traj['yaw_pos_{}'.format(agent_id)].append(info[agent_id]['observations']['pose'][5])
 
             timesteps.append(timestep)
             timestep = timestep + 1
 
             #rgb_array = ray_env.render()
-            ray_env.render()
+            #ray_env.render()
             #transfer to BGR for openCV
 
             #img_array.append(cv2.cvtColor(rgb_array, cv2.COLOR_RGB2BGR))
@@ -166,7 +167,7 @@ def train(algo,checkpoint_num,epochs):
             learner_stats = {"learner_agent_" + agent_prefix + "/" + k:v for (k,v) in agent_dict["learner_stats"].items()}
             log_dict.update(learner_stats)
         if epoch % checkpoint_num == 0:
-            checkpoint = algo.save("/home/christine/trained_models/0421")
+            checkpoint = algo.save("/home/christine/trained_models/0422")
             log_dict["checkpoint"] = checkpoint
         wandb.log(log_dict)
 
@@ -223,25 +224,25 @@ def run():
     config = config.multi_agent(policies = policies,
                                 policy_mapping_fn = policy_mapping_fn)
     #adding more workers for parallelization
-    config = config.rollouts(num_rollout_workers = 5)
+    config = config.rollouts(num_rollout_workers = 2)
 
 
 
-    algo = config.build()
-    checkpoint_num = 10
-    #checkpoint_path = "/home/christine/trained_models/checkpoint_001051"
-    #algo = Algorithm.from_checkpoint(checkpoint_path)
+    #algo = config.build()
+    #checkpoint_num = 10
+    #checkpoint_path = "/home/christine/trained_models/0421/checkpoint_000381"
+   # algo = Algorithm.from_checkpoint(checkpoint_path)
 
     #all the stuff above happens on every run of this file
 
     # param true or false check would go here
-    train(algo,checkpoint_num,params["epochs"])
+    #train(algo,checkpoint_num,params["epochs"])
 
     #another boolean check would go here --> for simulate I guess
 
-    #checkpoint_path = "/home/christine/trained_models/0421/checkpoint_000001"
-    #algo = Algorithm.from_checkpoint(checkpoint_path)
-    #trajectories = simulate(algo,2)
+    checkpoint_path = "/home/christine/trained_models/0422/checkpoint_000211"
+    algo = Algorithm.from_checkpoint(checkpoint_path)
+    trajectories = simulate(algo,2)
     #save_trajs(trajectories)
 
     #more checks for writing trajectories and rendering videos go here
