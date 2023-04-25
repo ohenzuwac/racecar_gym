@@ -33,7 +33,7 @@ from agent_traits import assign_traits
 def env_creator(env_config):
     env = gymnasium.make(
         id='MultiAgentRaceEnv-v0',
-        scenario='../scenarios/8agent_austria_het.yml',
+        scenario='../scenarios/circle_cw_het.yml',
         render_mode="rgb_array_follow"
     )
 
@@ -50,9 +50,9 @@ def policy_mapping_fn(agent_id,episode,worker,**kwargs):
 def simulate(algo,eps):
     env = gymnasium.make(
         id='MultiAgentRaceEnv-v0',
-        scenario='../scenarios/8agent_austria_het.yml',
+        scenario='../scenarios/circle_cw_het.yml',
         render_mode="human",
-        # render_options=dict(width=320, height=240, agent='A')
+        #render_options=dict(width=320, height=240, agent='B')
     )
     ray_env = RayWrapper(env)
 
@@ -64,13 +64,17 @@ def simulate(algo,eps):
     for episode in range(eps):
         trajectories['Episode{}'.format(episode)] = {}
         print('Episode: {}'.format(episode))
-        obs, _ = ray_env.reset()
+        obs, _ = ray_env.reset(options=dict(mode='grid'))
         #print(obs)
         done = {agent: False for agent in obs.keys()}
+
+
 
         img_array = []
         timesteps = []
         timestep = 0
+        ctr = 0
+
         traj = {}
         for agent_id in obs.keys():
             traj['x_pos_{}'.format(agent_id)] = []
@@ -82,7 +86,8 @@ def simulate(algo,eps):
             joint_action = {}
             for agent_id, agent_obs in obs.items():
                 #print(done[agent_id],agent_id)
-                #if done[agent_id]: continue # Don't get actions for done agents
+                if done[agent_id]:
+                    ctr = ctr + 1 # counting done agents
                 policy_id = policy_agent_mapping(agent_id,episode,None)
                 action = algo.compute_single_action(agent_obs, policy_id=policy_id)
                 joint_action[agent_id] = action
@@ -105,6 +110,7 @@ def simulate(algo,eps):
                     traj['yaw_pos_{}'.format(agent_id)].append(info[agent_id]['observations']['pose'][5])
 
             timesteps.append(timestep)
+            #print(timestep)
             timestep = timestep + 1
 
             #rgb_array = ray_env.render()
@@ -112,22 +118,22 @@ def simulate(algo,eps):
             #transfer to BGR for openCV
 
             #img_array.append(cv2.cvtColor(rgb_array, cv2.COLOR_RGB2BGR))
-
             #rgb_array = ray_env.render()
             #sleep(0.01)
 
-            if done['__all__']:
-                #video_array.append(img_array)
+            #episode terminates if all agents finished, top 3 agents finished or timstep == 8000
+            if done['__all__'] or timestep == 8000 or ctr >= 3:
+                video_array.append(img_array)
 
                 print("done!!")
 
                 trajectories['Episode{}'.format(episode)] = traj
                 trajectories['Episode{}'.format(episode)]['timesteps'] = timesteps
                 break
-    return trajectories
+    return trajectories, video_array
 
 
-#assume the input is a set of images representing one video --> not working
+#assume the input is a set of images representing one video -->  working
 def createvideo(vid):
     episode = 1
     filename = "trained_vid.mp4"
@@ -143,7 +149,7 @@ def save_trajs(trajectories,filepath = "/home/christine/thesis_trajectories"):
 
     #loop through the trajs
     for episode in trajectories.keys():
-        filename = "episode{}".format(episode)
+        filename = "{}".format(episode)
         file = os.path.join(filepath,filename)
         df = pd.DataFrame(trajectories[episode])
         df.to_csv(file)
@@ -167,9 +173,11 @@ def train(algo,checkpoint_num,epochs):
             learner_stats = {"learner_agent_" + agent_prefix + "/" + k:v for (k,v) in agent_dict["learner_stats"].items()}
             log_dict.update(learner_stats)
         if epoch % checkpoint_num == 0:
-            checkpoint = algo.save("/home/christine/racecar_gym/trained_models/0423")
+            checkpoint = algo.save("/home/christine/trained_models/0425")
             log_dict["checkpoint"] = checkpoint
         wandb.log(log_dict)
+
+    return algo
 
 
 def run():
@@ -190,18 +198,19 @@ def run():
     #fp --> filepath
 
 
-    epochs = 100000
+    epochs = 450
     rollout_fragment_length = 'auto'
     params = {"epochs": epochs,
               "rollout_fragment_length": rollout_fragment_length} #TODO(christine.ohenzuwa): add command line args using python argparse
     # https://docs.python.org/3/library/argparse.html
 
+    #ray.init(address='auto')
 
-    wandb.init(
+    #wandb.init(
         # Set the project where this run will be logged
-        project="population-learning",
+    #    project="population-learning",
         # Track hyperparameters and run metadata
-        config=params)
+    #    config=params)
 
     #creating different policies for different agents...not sure if this is necessary since all agents have the same
     #rewards and tasks
@@ -224,26 +233,28 @@ def run():
     config = config.multi_agent(policies = policies,
                                 policy_mapping_fn = policy_mapping_fn)
     #adding more workers for parallelization
-    config = config.rollouts(num_rollout_workers = 2)
+    config = config.rollouts(num_rollout_workers = 5)
 
 
 
-    algo = config.build()
-    checkpoint_num = 1000
-    checkpoint_path = "/home/christine/racecar_gym/trained_models/0422/checkpoint_000211"
-    algo = Algorithm.from_checkpoint(checkpoint_path)
+    #algo = config.build()
+    checkpoint_num = 10
+    #checkpoint_path = "/home/christine/trained_models/0424/checkpoint_000351"
+    #algo = Algorithm.from_checkpoint(checkpoint_path)
 
     #all the stuff above happens on every run of this file
 
     # param true or false check would go here
-    train(algo,checkpoint_num,params["epochs"])
+    #algo = train(algo,checkpoint_num,params["epochs"])
 
     #another boolean check would go here --> for simulate I guess
 
-    #checkpoint_path = "/home/christine/racecar_gym/trained_models/0422/checkpoint_000211"
-    #algo = Algorithm.from_checkpoint(checkpoint_path)
-    #trajectories = simulate(algo,2)
+    checkpoint_path = "/home/christine/trained_models/0425/checkpoint_000441"
+    algo = Algorithm.from_checkpoint(checkpoint_path)
+    trajectories, vid_array = simulate(algo,)
     #save_trajs(trajectories)
+    #createvideo(vid_array[0])
+
 
     #more checks for writing trajectories and rendering videos go here
 

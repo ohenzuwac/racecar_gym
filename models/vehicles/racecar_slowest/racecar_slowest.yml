@@ -10,7 +10,7 @@ actuators:
   name: motor
   params:
     velocity_multiplier: 20.0
-    max_velocity: 2.1734881568078768
+    max_velocity: 3
     max_force: 0.5
 - type: speed
   name: speed
