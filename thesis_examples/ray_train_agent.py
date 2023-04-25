@@ -251,7 +251,7 @@ def run():
 
     checkpoint_path = "/home/christine/trained_models/0425/checkpoint_000441"
     algo = Algorithm.from_checkpoint(checkpoint_path)
-    trajectories, vid_array = simulate(algo,)
+    trajectories, vid_array = simulate(algo,1)
     #save_trajs(trajectories)
     #createvideo(vid_array[0])
 
