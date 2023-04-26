@@ -33,6 +33,7 @@ def train():
     cuda = True
     DEVICE = torch.device("cuda" if cuda else "cpu")
 
+
     #todo: overwrite dims
     batch_size = 1
     x_dim = 784

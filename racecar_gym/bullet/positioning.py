@@ -24,11 +24,11 @@ class AutomaticGridStrategy(PositioningStrategy):
         max_index = np.unravel_index(center, shape=starting_area.shape)
         center_position = self._distance_map.to_meter(px + max_index[0], py + max_index[1])
         if agent_index % 2 == 0:
-            y = center_position[1] + 0.1
+            y = center_position[1] + 0.1 #0.1
         else:
-            y = center_position[1] - 0.1
+            y = center_position[1] - 0.1 #0.1
 
-        x = center_position[0] + 1 *0.8* (self._number_of_agents - agent_index) / 2
+        x = center_position[0] + 1 *0.9* (self._number_of_agents - agent_index) / 2
 
         return (x, y, 0.05), (0.0, 0.0, 0.0)
 

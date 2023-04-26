@@ -87,6 +87,7 @@ def simulate(algo,eps):
             for agent_id, agent_obs in obs.items():
                 #print(done[agent_id],agent_id)
                 if done[agent_id]:
+                    #print("an agent is done")
                     ctr = ctr + 1 # counting done agents
                 policy_id = policy_agent_mapping(agent_id,episode,None)
                 action = algo.compute_single_action(agent_obs, policy_id=policy_id)
@@ -122,7 +123,7 @@ def simulate(algo,eps):
             #sleep(0.01)
 
             #episode terminates if all agents finished, top 3 agents finished or timstep == 8000
-            if done['__all__'] or timestep == 8000 or ctr >= 3:
+            if done['__all__'] or timestep == 5000 or ctr >= 3:
                 video_array.append(img_array)
 
                 print("done!!")
@@ -251,7 +252,7 @@ def run():
 
     checkpoint_path = "/home/christine/trained_models/0425/checkpoint_000441"
     algo = Algorithm.from_checkpoint(checkpoint_path)
-    trajectories, vid_array = simulate(algo,1)
+    trajectories, vid_array = simulate(algo,10)
     #save_trajs(trajectories)
     #createvideo(vid_array[0])
 
