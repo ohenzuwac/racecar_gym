@@ -4,11 +4,12 @@ from torch import nn
 import torch
 from torch.utils.data import DataLoader
 from attention_vae import AttentionVAE
+from pandas_dataset import CustomDataset
 
 import numpy as np
 
 from tqdm import tqdm
-from torchvision.utils import save_image, make_grid
+import pandas as pd
 
 
 def loss_function(x, x_hat, mean, log_var):
@@ -16,12 +17,16 @@ def loss_function(x, x_hat, mean, log_var):
     KLD  = - 0.5 * torch.sum(1+ log_var - mean.pow(2) - log_var.exp())
     return reproduction_loss + KLD
 
+def l2_loss(x, x_hat):
+    sq_error = (x-x_hat)**2
+    sq_error = sq_error.sum(-1).sum(-1).sum(-1)
+    return sq_error
+
+
 
 def train():
 
     # Model Hyperparameters
-
-    model = AttentionVAE
 
     dataset_path = '~/datasets'
 
@@ -29,10 +34,23 @@ def train():
     DEVICE = torch.device("cuda" if cuda else "cpu")
 
     #todo: overwrite dims
-    batch_size = 100
+    batch_size = 1
     x_dim = 784
-    hidden_dim = 400
-    latent_dim = 200
+    hidden_dim = 540
+    latent_dim = 2
+
+    num_csvs = 2
+    df_list = []
+    for i in range(num_csvs):
+        df = pd.read_csv(f"csv_files/episodeEpisode{i}.csv")
+        df_list.append(df)
+    train_dataset = CustomDataset(df_list)
+    test_dataset = CustomDataset(df_list)
+
+    model = AttentionVAE(sequence_length=train_dataset.sequence_length,
+                         num_agents=train_dataset.num_agents,
+                         latent_dim=latent_dim,
+                         embedding_dim=hidden_dim)
 
     lr = 1e-3
 
@@ -41,8 +59,7 @@ def train():
     kwargs = {'num_workers': 1, 'pin_memory': True}
 
     # TODO
-    train_dataset = None
-    test_dataset = None
+
 
     # TRAJECTORY format should be [batch_size, num_agents, timesteps, spatial_dim (=2)]
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True, **kwargs)
@@ -56,20 +73,24 @@ def train():
 
     for epoch in range(epochs):
         overall_loss = 0
-        for batch_idx, (x, _) in enumerate(train_loader):
-            x = x.view(batch_size, x_dim)
-            x = x.to(DEVICE)
+        for batch_idx, x in enumerate(train_loader):
 
             optimizer.zero_grad()
 
             x_hat, mean, log_var = model(x)
-            loss = loss_function(x, x_hat, mean, log_var)
+            loss = l2_loss(x, x_hat).mean()
 
             overall_loss += loss.item()
 
             loss.backward()
             optimizer.step()
 
+        batch_idx += 1
+
         print("\tEpoch", epoch + 1, "complete!", "\tAverage Loss: ", overall_loss / (batch_idx * batch_size))
 
     print("Finish!!")
+
+
+if __name__ == "__main__":
+    train()
