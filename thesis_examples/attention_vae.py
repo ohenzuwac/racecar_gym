@@ -7,25 +7,31 @@ from torch import Tensor
 
 from thesis_examples.mlp import MLP
 
-class AttentionVAE(torch.nn):
+class AttentionVAE(nn.Module):
 
     def __init__(self,
-                 in_channels: int,
+                 sequence_length: int,
+                 num_agents: int,
                  latent_dim: int,
-                 out_dim: int,
-                 hidden_dims: List = None,
+                 embedding_dim: int,
                  **kwargs) -> None:
         super(AttentionVAE, self).__init__()
 
-        self.embedding_dim = hidden_dims[-1]
+        out_dim = sequence_length*num_agents*3
+
+        self.embedding_dim = embedding_dim
         self.out_dim = out_dim
+        self.num_agents = num_agents
+        self.sequence_length = sequence_length
 
         self.mu_dim = latent_dim
         self.sigma_dim = latent_dim ** 2
-        self.latent_dim = self.mu_dim + self.sigma_dim
+        self.latent_dim = latent_dim
 
-        self.encoder_layer = nn.TransformerEncoderLayer(d_model=self.embedding_dim, nhead=16)
+        self.input_encoder = MLP(input_size=num_agents*3, output_size=self.embedding_dim)
+        self.encoder_layer = nn.TransformerEncoderLayer(d_model=self.embedding_dim, nhead=12, batch_first=True)
         self.encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=6)
+        self.attention = nn.MultiheadAttention(embed_dim=self.embedding_dim, num_heads=12, batch_first=True)
         self.fc_mu = MLP(self.embedding_dim, self.mu_dim)
         self.fc_sigma = MLP(self.embedding_dim, self.sigma_dim)
 
@@ -36,16 +42,21 @@ class AttentionVAE(torch.nn):
         """
         Encodes the input by passing through the encoder network
         and returns the latent codes.
-        :param input: (Tensor) Input tensor to encoder [N x C x H x W]
+        :param input: (Tensor) Input tensor to encoder [B, A, T, D]
         :return: (Tensor) List of latent codes
         """
+        batch_size, num_agents, timesteps, traj_dim = input.shape
+        input = input.permute(0, 2, 1, 3).reshape(batch_size, timesteps, -1)
+        input = self.input_encoder(input)
         result = self.encoder(input)
-        result = torch.flatten(result, start_dim=1)
+
+        # max pool
+        result = torch.max(result, dim=1).values
 
         # Split the result into mu and var components
         # of the latent Gaussian distribution
         mu = self.fc_mu(result)
-        log_var = self.fc_var(result)
+        log_var = self.fc_sigma(result).reshape(-1, self.latent_dim, self.latent_dim)
 
         return [mu, log_var]
 
@@ -68,13 +79,15 @@ class AttentionVAE(torch.nn):
         :return: (Tensor) [B x D]
         """
         std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(std)
-        return eps * std + mu
+        eps = torch.randn_like(mu).unsqueeze(-1)
+        return torch.matmul(std, eps).squeeze(-1) + mu
 
     def forward(self, input: Tensor, **kwargs) -> List[Tensor]:
         mu, log_var = self.encode(input)
         z = self.reparameterize(mu, log_var)
-        return [self.decode(z), input, mu, log_var]
+        result = self.decode(z)
+        result = result.reshape(-1, self.num_agents, self.sequence_length, 3)
+        return [result, mu, log_var]
 
     def loss_function(self,
                       *args,
