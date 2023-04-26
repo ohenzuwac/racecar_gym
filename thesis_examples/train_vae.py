@@ -91,6 +91,10 @@ def train():
 
     print("Finish!!")
 
+    return model
+
+
 
 if __name__ == "__main__":
-    train()
+    model = train()
+    model.sample(1,0)
