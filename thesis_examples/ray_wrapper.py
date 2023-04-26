@@ -92,13 +92,18 @@ class RayWrapper(MultiAgentEnv):
         #unflattening the actions so that multi_agent_race env can process it --> not needed?
         #unflat_acts = unflatten_acts(actions)
 
+        doned_keys = []
+
         #stepping with the multi_agent_race env's function
         observations, rewards, dones, truncated, state = self._env.step(actions)
-
 
         #flattening the observations for rllib
         flat_obs = {}
         for key in self._env.possible_agents:
+            #skip done agents
+            #if dones[key]:
+            #    doned_keys.append(key)
+            #    continue
             flat_obs[key] = flatten_obs(observations[key])
             flat_obs[key] = flat_obs[key].astype(np.float64)
 
@@ -107,6 +112,12 @@ class RayWrapper(MultiAgentEnv):
         #checking if the environment has terminated
         dones.update({'__all__': all(dones.values())})
         truncated.update({'__all__': all(truncated.values())})
+
+
+
+        #new_state = {k: state[k] for k in state.keys() - {tuple(doned_keys)}}
+
+        #try making a deep copy and then deleting the keys you need to delete
 
         #returning the required values
         return flat_obs, rewards, dones, truncated, state

@@ -59,13 +59,21 @@ class MultiAgentRaceEnv(gymnasium.Env):
         state = {}
         truncated = {}
 
+        # maybe need to edit this line to handle dones?
         for id, agent in self._scenario.agents.items():
+            #skips collecting observations and states for agents that are done assuming they do not get new actions
+            #if id not in action.keys(): continue
             observations[id], state[id] = agent.step(action=action[id])
 
         self._scenario.world.update()
         state = self._scenario.world.state()
 
         for id, agent in self._scenario.agents.items():
+            #same as above
+            #if id not in action.keys():
+            #    dones[id] = True
+            #    truncated[id] = False
+            #    continue
             state[id]['observations'] = observations[id]
             observations[id]['time'] = np.array(state[id]['time'], dtype=np.float32)
             dones[id] = agent.done(state)
