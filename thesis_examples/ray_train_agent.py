@@ -51,8 +51,8 @@ def simulate(algo,eps):
     env = gymnasium.make(
         id='MultiAgentRaceEnv-v0',
         scenario='../scenarios/circle_cw_het.yml',
-        render_mode="human",
-        #render_options=dict(width=320, height=240, agent='B')
+        render_mode="rgb_array_follow",
+        render_options=dict(width=320, height=240, agent='B')
     )
     ray_env = RayWrapper(env)
 
@@ -60,10 +60,11 @@ def simulate(algo,eps):
     video_array = []
     trajectories = {}
 
-
+    cont = 20
     for episode in range(eps):
-        trajectories['Episode{}'.format(episode)] = {}
-        print('Episode: {}'.format(episode))
+        #trajectories['Episode{}'.format(episode)] = {}
+        trajectories['Episode{}'.format(cont)] = {}
+        print('Episode: {}'.format(cont))
         obs, _ = ray_env.reset(options=dict(mode='grid'))
         #print(obs)
         done = {agent: False for agent in obs.keys()}
@@ -114,11 +115,11 @@ def simulate(algo,eps):
             #print(timestep)
             timestep = timestep + 1
 
-            #rgb_array = ray_env.render()
+            rgb_array = ray_env.render()
             #ray_env.render()
             #transfer to BGR for openCV
 
-            #img_array.append(cv2.cvtColor(rgb_array, cv2.COLOR_RGB2BGR))
+            img_array.append(cv2.cvtColor(rgb_array, cv2.COLOR_RGB2BGR))
             #rgb_array = ray_env.render()
             #sleep(0.01)
 
@@ -128,8 +129,10 @@ def simulate(algo,eps):
 
                 print("done!!")
 
-                trajectories['Episode{}'.format(episode)] = traj
-                trajectories['Episode{}'.format(episode)]['timesteps'] = timesteps
+                trajectories['Episode{}'.format(cont)] = traj
+                trajectories['Episode{}'.format(cont)]['timesteps'] = timesteps
+                save_trajs(trajectories)
+                cont = cont + 1
                 break
     return trajectories, video_array
 
@@ -150,7 +153,7 @@ def save_trajs(trajectories,filepath = "/home/christine/thesis_trajectories"):
 
     #loop through the trajs
     for episode in trajectories.keys():
-        filename = "{}".format(episode)
+        filename = "{}.csv".format(episode)
         file = os.path.join(filepath,filename)
         df = pd.DataFrame(trajectories[episode])
         df.to_csv(file)
@@ -254,7 +257,7 @@ def run():
     algo = Algorithm.from_checkpoint(checkpoint_path)
     trajectories, vid_array = simulate(algo,10)
     #save_trajs(trajectories)
-    #createvideo(vid_array[0])
+    createvideo(vid_array[0])
 
 
     #more checks for writing trajectories and rendering videos go here

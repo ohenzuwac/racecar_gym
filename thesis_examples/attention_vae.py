@@ -86,7 +86,7 @@ class AttentionVAE(nn.Module):
         mu, log_var = self.encode(input)
         z = self.reparameterize(mu, log_var)
         result = self.decode(z)
-        result = result.reshape(-1, self.num_agents, self.sequence_length, 3)
+        result = result.reshape(-1, self.num_agents, self.sequence_length, 3) #why this size?
         return [result, mu, log_var]
 
     def loss_function(self,
