@@ -17,6 +17,11 @@ def loss_function(x, x_hat, mean, log_var):
     KLD  = - 0.5 * torch.sum(1+ log_var - mean.pow(2) - log_var.exp())
     return reproduction_loss + KLD
 
+def vae_loss(x, x_hat, mean, log_var):
+    reproduction_loss = l2_loss(x, x_hat)
+    KLD = - 0.5 * torch.sum(1+ log_var - mean.pow(2) - log_var.exp())
+    return reproduction_loss + KLD
+
 def l2_loss(x, x_hat):
     sq_error = (x-x_hat)**2
     sq_error = sq_error.sum(-1).sum(-1).sum(-1)
@@ -77,8 +82,8 @@ def train():
 
             optimizer.zero_grad()
 
-            x_hat, mean, log_var = model(x)
-            loss = l2_loss(x, x_hat).mean()
+            x_hat, mean, log_var, z = model(x)
+            loss = vae_loss(x[..., :2], x_hat, mean, log_var).mean()
 
             overall_loss += loss.item()
 
