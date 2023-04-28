@@ -33,18 +33,22 @@ def train():
 
     cuda = True
     DEVICE = torch.device("cuda" if cuda else "cpu")
+    torch.set_default_device('cpu')
 
+    chkpoint = 100
+    save_plot = 10
 
     #todo: overwrite dims
     batch_size = 1
     x_dim = 784
     hidden_dim = 540
-    latent_dim = 2
+    latent_dim = 3
 
-    num_csvs = 2
+    num_csvs = 1
     df_list = []
     for i in range(num_csvs):
-        df = pd.read_csv(f"csv_files/0425/Episode{i}")
+        df = pd.read_csv(f"/home/jupyter/racecar_gym/thesis_examples/csv_files/0425/Episode{i}")
+        df = df.head(2000)
         df_list.append(df)
     train_dataset = CustomDataset(df_list)
     test_dataset = CustomDataset(df_list)
@@ -56,7 +60,7 @@ def train():
 
     lr = 1e-3
 
-    epochs = 1
+    epochs = 1000
 
     kwargs = {'num_workers': 1, 'pin_memory': True}
 
@@ -72,6 +76,7 @@ def train():
 
     print("Start training VAE...")
     model.train()
+    loss_plot = []
 
     for epoch in range(epochs):
         overall_loss = 0
@@ -92,8 +97,27 @@ def train():
         batch_idx += 1
 
         print("\tEpoch", epoch + 1, "complete!", "\tAverage Loss: ", overall_loss / (batch_idx * batch_size))
+        
+        loss_plot.append(overall_loss / (batch_idx * batch_size))
+        
+        #saving models
+        if epoch % chkpoint == 0:
+             if epoch > 0:
+                plt.figure()
+                plt.plot(np.arange(epoch+1),loss_plot,color = 'k')
+                plt.xlabel("Epoch")
+                plt.ylabel("Average Reconstruction Loss")
+                plt.title("Average Reconstruction Loss for a Variational Autoencoder")
+                plt.savefig("/home/jupyter/racecar_gym/thesis_examples/VAE_losses/Loss{}.png".format(epoch))
+        
+        if epoch % chkpoint == 0:
+            torch.save(model,"/home/jupyter/racecar_gym/thesis_examples/VAEmodels/model{}.pt".format(epoch)) 
+              
+            
 
     print("Finish!!")
+    #print(loss_plot)
+    
 
     return model, test_loader
 
@@ -104,8 +128,8 @@ def plot_traj(x,model):
     y_vals = []
 
     for i in range(model.num_agents):
-        print("this is a matrix!")
-        (print(x[0,0])) #--> gets the first matrix
+        #print("this is a matrix!")
+        #(print(x[0,0])) #--> gets the first matrix
         #print(x[0,0,1]) #--> gets the first row
         #print(x[0,0,:,0]) # --> gets the all rows in the first col
 
@@ -117,12 +141,15 @@ def plot_traj(x,model):
     #print(x_vals[0].numpy().size)
     #x_vals[0] = x_vals[0].numpy()
     #y_vals[0] = y_vals[0].numpy()
-    plt.plot(x_vals[0], y_vals[0],x_vals[1],y_vals[1],x_vals[2],y_vals[2],x_vals[3],y_vals[3])
-    plt.xlabel("x position")
-    plt.ylabel("y position")
+    plt.figure()
+    plt.plot(x_vals[0], y_vals[0],x_vals[1],y_vals[1],x_vals[2],y_vals[2],x_vals[3],y_vals[3],
+            x_vals[4],y_vals[4],x_vals[5],y_vals[5])
+    plt.xlabel("x Position")
+    plt.ylabel("Y Position")
     plt.title("Ground Truth Trajectories for Agents")
-    plt.legend(["Agent A", "Agent B", "Agent C", "Agent D"], loc = "lower right")
+    plt.legend(["Agent A", "Agent B", "Agent C", "Agent D","Agent E","Agent F"], loc = "lower right")
     plt.show()
+    plt.savefig('example_plot.png')
 
     return x_vals,y_vals
 
@@ -135,15 +162,19 @@ def plot_traj(x,model):
 
 
 if __name__ == "__main__":
-    model, test_loader = train()
+    #model, test_loader = train()
+    model = torch.load("/home/jupyter/racecar_gym/thesis_examples/VAEmodels/model900.pt")
+    #sample = model.sample(1,torch.device('cpu'))
+    #for batch_idx, x in enumerate(test_loader):
+    #    result, mu, log_var = model(x)
+    
+    
     sample = model.sample(1,torch.device('cpu'))
-    for batch_idx, x in enumerate(test_loader):
-        result, mu, log_var = model(x)
-
+    
     sample = sample.reshape(-1, model.num_agents, model.sequence_length, 3)
 
     #plot original trajectories
-    plot_traj(x,model)
+    plot_traj(sample,model)
 
     #gather the relevant information (x,y values for now)
 
