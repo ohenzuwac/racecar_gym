@@ -17,7 +17,7 @@ class AttentionVAE(nn.Module):
                  **kwargs) -> None:
         super(AttentionVAE, self).__init__()
 
-        out_dim = sequence_length*num_agents*3
+        out_dim = sequence_length*2
 
         self.embedding_dim = embedding_dim
         self.out_dim = out_dim
@@ -25,10 +25,10 @@ class AttentionVAE(nn.Module):
         self.sequence_length = sequence_length
 
         self.mu_dim = latent_dim
-        self.sigma_dim = latent_dim ** 2
+        self.sigma_dim = latent_dim
         self.latent_dim = latent_dim
 
-        self.input_encoder = MLP(input_size=num_agents*3, output_size=self.embedding_dim)
+        self.input_encoder = MLP(input_size=3, output_size=self.embedding_dim)
         self.encoder_layer = nn.TransformerEncoderLayer(d_model=self.embedding_dim, nhead=12, batch_first=True)
         self.encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=6)
         self.attention = nn.MultiheadAttention(embed_dim=self.embedding_dim, num_heads=12, batch_first=True)
@@ -46,8 +46,9 @@ class AttentionVAE(nn.Module):
         :return: (Tensor) List of latent codes
         """
         batch_size, num_agents, timesteps, traj_dim = input.shape
-        input = input.permute(0, 2, 1, 3).reshape(batch_size, timesteps, -1)
+        input = input.permute(0, 2, 1, 3)  # [B, T, A, C]  #.reshape(batch_size, timesteps, -1)
         input = self.input_encoder(input)
+        input = input.permute(0, 2, 1, 3).reshape(batch_size*num_agents, timesteps, -1)  # [B, A, T, C]
         result = self.encoder(input)
 
         # max pool
@@ -56,7 +57,7 @@ class AttentionVAE(nn.Module):
         # Split the result into mu and var components
         # of the latent Gaussian distribution
         mu = self.fc_mu(result)
-        log_var = self.fc_sigma(result).reshape(-1, self.latent_dim, self.latent_dim)
+        log_var = self.fc_sigma(result).reshape(-1, self.latent_dim)
 
         return [mu, log_var]
 
@@ -79,15 +80,17 @@ class AttentionVAE(nn.Module):
         :return: (Tensor) [B x D]
         """
         std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(mu).unsqueeze(-1)
-        return torch.matmul(std, eps).squeeze(-1) + mu
+        eps = torch.randn_like(std)
+        return eps * std + mu
 
     def forward(self, input: Tensor, **kwargs) -> List[Tensor]:
         mu, log_var = self.encode(input)
         z = self.reparameterize(mu, log_var)
         result = self.decode(z)
-        result = result.reshape(-1, self.num_agents, self.sequence_length, 3) #why this size?
-        return [result, mu, log_var]
+        
+        batch_size = result.shape[0] // self.num_agents
+        result = result.reshape(batch_size, self.num_agents, self.sequence_length, 2)
+        return [result, mu, log_var, z]
 
     def loss_function(self,
                       *args,
