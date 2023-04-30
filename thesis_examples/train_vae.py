@@ -6,6 +6,8 @@ from torch.utils.data import DataLoader
 from attention_vae import AttentionVAE
 from pandas_dataset import CustomDataset
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+
 
 import numpy as np
 
@@ -18,7 +20,7 @@ def loss_function(x, x_hat, mean, log_var):
     KLD  = - 0.5 * torch.sum(1+ log_var - mean.pow(2) - log_var.exp())
     return reproduction_loss + KLD
 
-def vae_loss(x, x_hat, mean, log_var):
+def vae_loss_old(x, x_hat, mean, log_var):
     reproduction_loss = l2_loss(x, x_hat)
     KLD = - 0.5 * torch.sum(1+ log_var - mean.pow(2) - log_var.exp())
     return reproduction_loss + KLD
@@ -31,7 +33,9 @@ def l2_loss(x, x_hat):
 def vae_loss(x, x_hat, mean, log_var):
     reproduction_loss = l2_loss(x, x_hat)
     KLD = - 0.5 * torch.sum(1+ log_var - mean.pow(2) - log_var.exp())
-    return reproduction_loss + 0.01 * KLD
+    
+    #changed this from 0.1 KLD and was previously 0.01 KLD
+    return reproduction_loss + 0.01*KLD
 
 
 
@@ -45,21 +49,34 @@ def train():
     DEVICE = torch.device("cuda" if cuda else "cpu")
     torch.set_default_device('cpu')
 
-    chkpoint = 99
-    save_plot = 10
+    chkpoint = 50
 
     #todo: overwrite dims
     batch_size = 1
     x_dim = 784
     hidden_dim = 540
-    latent_dim = 2
+    latent_dim = 3
 
     num_csvs = 1
     df_list = []
+    
     for i in range(num_csvs):
         df = pd.read_csv(f"/home/jupyter/racecar_gym/thesis_examples/csv_files/0425/Episode{i}")
-        df = df.head(2000)
-        df_list.append(df)
+        df = df.head(4000)
+        
+        #subsampling, every 5th row
+        df = df.iloc[::4,:]
+    
+        #hard coding this for now        
+        start = 1
+        end  = 4
+        for i in range(6):
+            df_agent = pd.concat([df.iloc[:,start:end],df.iloc[:,-1]], axis = 1)
+            start = start+3
+            end = end +3
+            df_list.append(df_agent)
+        
+        
     train_dataset = CustomDataset(df_list)
     test_dataset = CustomDataset(df_list)
 
@@ -70,7 +87,7 @@ def train():
 
     lr = 1e-3
 
-    epochs = 500
+    epochs = 1001
 
     kwargs = {'num_workers': 1, 'pin_memory': True}
 
@@ -95,9 +112,14 @@ def train():
             #print("x ", x.size(), x)
 
             optimizer.zero_grad()
-
-            x_hat, mean, log_var, z = model(x)
+            
+            #verify model is getting the correct inputs --> I want to input x and y observed positions for all agents
+            #print("x",x[..., :2],x[..., :2].shape)
+            
+            x_hat, mean, log_var, z = model(x[..., :2])
+            
             loss = vae_loss(x[..., :2], x_hat, mean, log_var).mean()
+            #loss = l2_loss(x[..., :2], x_hat)
 
             overall_loss += loss.item()
 
@@ -121,13 +143,22 @@ def train():
                 plt.savefig("/home/jupyter/racecar_gym/thesis_examples/VAE_losses/Loss{}.png".format(epoch))
         
         if epoch % chkpoint == 0 or epoch == 999:
-            torch.save(model,"/home/jupyter/VAEmodels/1csv_2dim_KL/model{}.pt".format(epoch))
+            torch.save(model,"/home/jupyter/VAEmodels/2_dim_10csv_single_agent_input/model{}.pt".format(epoch))
             sample = model.sample(1,torch.device('cpu'))
-            sample = sample.reshape(-1, model.num_agents, model.sequence_length, 3)
-            plot_traj(sample,model,epoch)
+            #sample = sample.reshape(-1, model.num_agents, model.sequence_length, 3)
             
+            #represents a single agent's trajectory
+            sample = sample.reshape(1, 1, model.sequence_length, 2)
             
-
+            #sampled values
+            plot_single_agent(sample,model,epoch,0)
+            
+            #true reconstructions
+            plot_single_agent(x_hat,model,epoch,1)
+            
+            #also plot x to check the GT representation
+            plot_single_agent(x,model,epoch,2)
+            
     print("Finish!!")
     #print(loss_plot)
     
@@ -135,12 +166,49 @@ def train():
     return model, test_loader
 
 
+def plot_single_agent(x, model, epoch, slctr):
+      #make this a scatter plot
+    #color code the agents by type in some way --> Green, Yellow (orange), Red
+    
+    titles = ["Sampled VAE Trajectories for Agents After {} Epoch(s)".format(epoch), "VAE Reconstructed Trajectories for Agents After {} Epoch(s)".format(epoch), "Ground Truth Trajectories for Agents After {} Epoch(s)".format(epoch)]
+    saving = ['VAE_sampled_traj{}.png'.format(epoch), "VAE_recon_traj{}.png".format(epoch), "GT{}.png".format(epoch)]
+    x_vals = []
+    y_vals = []
+
+    for i in range(1):
+        #print("this is a matrix!")
+        #(print(x[0,0])) #--> gets the first matrix
+        #print(x[0,0,1]) #--> gets the first row
+        #print(x[0,0,:,0]) # --> gets the all rows in the first col
+
+        x_vals.append(x[0,i,:,0].detach().numpy()) #append x and y trajectories for each agent
+        y_vals.append(x[0,i,:,1].detach().numpy())
+
+        #print(x_vals[0])
+
+    #print(x_vals[0].numpy().size)
+    #x_vals[0] = x_vals[0].numpy()
+    #y_vals[0] = y_vals[0].numpy()
+    plt.figure()
+    plt.scatter(x_vals[0], y_vals[0])
+    plt.xlabel("X Position")
+    plt.ylabel("Y Position")
+    plt.title(titles[slctr])
+    plt.legend(["Agent"], loc = "upper left")
+    plt.show()
+    plt.savefig(saving[slctr])
+
+    return x_vals,y_vals
+
+    
+
 # x is the sample trajectories or original trajectories in the format generated by tensor's dataloader
-def plot_traj(x,model,epoch):
+def plot_traj(x,model,epoch,slctr):
     
     #make this a scatter plot
     #color code the agents by type in some way --> Green, Yellow (orange), Red
     
+    titles = ["Sampled VAE Trajectories for Agents After {} Epoch(s)".format(epoch+1), "VAE Reconstructed Trajectories for Agents After {} Epoch(s)".format(epoch+1)]
     x_vals = []
     y_vals = []
 
@@ -163,7 +231,7 @@ def plot_traj(x,model,epoch):
             x_vals[4],y_vals[4],x_vals[5],y_vals[5])
     plt.xlabel("x Position")
     plt.ylabel("Y Position")
-    plt.title("VAE Generated Trajectories for Agents After {} Epoch(s)".format(epoch+1))
+    plt.title(titles[slctr])
     plt.legend(["Agent A", "Agent B", "Agent C", "Agent D","Agent E","Agent F"], loc = "upper left")
     plt.show()
     plt.savefig('VAE_gen_traj{}.png'.format(epoch))
@@ -172,7 +240,7 @@ def plot_traj(x,model,epoch):
 
 
 
-
+#returns a test set for reconstructions
 def get_test():
     
     #todo: overwrite dims
@@ -185,49 +253,105 @@ def get_test():
     
     num_csvs = 1
     df_list = []
+    #hard coded
     for i in range(num_csvs):
         df = pd.read_csv(f"/home/jupyter/racecar_gym/thesis_examples/csv_files/0425/Episode{i}")
-        df = df.head(2000)
-        df_list.append(df)
-    train_dataset = CustomDataset(df_list)
+        df = df.head(4000)
+        df = df.iloc[::4,:]
+            
+    
+        #hard coding this for now        
+        start = 1
+        end  = 4
+        for i in range(6):
+            df_agent = pd.concat([df.iloc[:,start:end],df.iloc[:,-1]], axis = 1)
+            start = start+3
+            end = end +3
+            df_list.append(df_agent)
+            
     test_dataset = CustomDataset(df_list)
     
     # TRAJECTORY format should be [batch_size, num_agents, timesteps, spatial_dim (=2)]
-    train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True, **kwargs)
     test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False, **kwargs)
     BCE_loss = nn.BCELoss()
     
     return test_loader
 
 
+#assumes data comes as a list, with each element representing an agent's trajectory (x and y) information for a particular episode
+def plot_traj_singles(x,model,epoch,slctr):
+    
+    titles = ["Sampled VAE Trajectories for Agents After {} Epoch(s)".format(epoch), "VAE Reconstructed Trajectories for Agents After {} Epoch(s)".format(epoch), "Ground Truth Trajectories for Agents After {} Epoch(s)".format(epoch)]
+    saving = ['VAE_sampled_traj{}.png'.format(epoch), "VAE_recon_traj{}.png".format(epoch), "GT{}.png".format(epoch)]
+    
+    x_vals = []
+    y_vals = []
+ 
+
+    #hard coded
+    for i in range(6):
+        x_vals.append(x[i][0,0,:,0].detach().numpy())
+        y_vals.append(x[i][0,0,:,1].detach().numpy())       
+       
+    plt.figure()
+    plt.scatter(x_vals[0], y_vals[0], c = 'darkgreen')
+    plt.scatter(x_vals[1],y_vals[1], c = 'lightgreen')
+    plt.scatter(x_vals[2],y_vals[2], c = 'yellow')
+    plt.scatter(x_vals[3],y_vals[3], c = 'gold')
+    plt.scatter(x_vals[4],y_vals[4], c = 'tomato')
+    plt.scatter( x_vals[5],y_vals[5] ,c = 'darkred')
+    
+    
+    plt.xlabel("X Position")
+    plt.ylabel("Y Position")
+    plt.title(titles[slctr])
+    plt.legend(["Agent A", "Agent B", "Agent C", "Agent D","Agent E","Agent F"], loc = "upper left")
+    plt.show()
+    plt.savefig(titles[slctr])
+
+    return x_vals,y_vals
+
 
 
 
 if __name__ == "__main__":
     model, test_loader = train()
-    #model = torch.load("/home/jupyter/VAEmodels/model25.pt")
+    #model = torch.load("/home/jupyter/VAEmodels/2_dim_10csv_single_agent_input/model100.pt")
     #sample = model.sample(1,torch.device('cpu'))
     #for batch_idx, x in enumerate(test_loader):
         #result, mu, log_var = model(x)
     test_loader = get_test()
     
-    for batch in test_loader:
-        break
+    #for batch in test_loader:
+    #    break
     
-    recon, mu, log_var = model.forward(batch)
     
-    plot_traj(recon,model,99)
-    plot_traj(batch,model,1000000)
+    #plot_single_agent(recon,model,99)
+    #plot_traj(batch,model,1000000)
     
-    sample = model.sample(1,torch.device('cpu'))
-    sample = sample.reshape(-1, model.num_agents, model.sequence_length, 3)
+    #sample = model.sample(1,torch.device('cpu'))
+    #sample = sample.reshape(-1, model.num_agents, model.sequence_length, 3)
 
     #plot original trajectories
-    plot_traj(sample,model,500000)
+    #plot_traj(sample,model,500000)
     
-
-    #gather the relevant information (x,y values for now)
-
-
-
-
+    #New plotting code
+    
+    #gets first 6 trajectories in the test_loader
+    test_traj = []
+    VAE_gen = []
+    for x in test_loader:
+        test_traj.append(x)
+        if len(test_traj) == 6:
+            break
+    #plot_traj_singles(test_traj,model,100,2)
+    
+    for agent in test_traj:
+        VAE_gen.append(model.generate(agent[...,:2]))
+    
+    #plot_traj_singles(VAE_gen,model,100,1)
+    
+    
+      
+    
+    

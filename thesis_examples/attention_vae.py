@@ -28,7 +28,8 @@ class AttentionVAE(nn.Module):
         self.sigma_dim = latent_dim
         self.latent_dim = latent_dim
 
-        self.input_encoder = MLP(input_size=3, output_size=self.embedding_dim)
+        # I changed input_size from 3 to 2 on April 29, becuase I believe we are only processing two inputs after cutting off the yaw values
+        self.input_encoder = MLP(input_size=2, output_size=self.embedding_dim)
         self.encoder_layer = nn.TransformerEncoderLayer(d_model=self.embedding_dim, nhead=12, batch_first=True)
         self.encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=6)
         self.attention = nn.MultiheadAttention(embed_dim=self.embedding_dim, num_heads=12, batch_first=True)
@@ -47,6 +48,7 @@ class AttentionVAE(nn.Module):
         """
         batch_size, num_agents, timesteps, traj_dim = input.shape
         input = input.permute(0, 2, 1, 3)  # [B, T, A, C]  #.reshape(batch_size, timesteps, -1)
+        
         input = self.input_encoder(input)
         input = input.permute(0, 2, 1, 3).reshape(batch_size*num_agents, timesteps, -1)  # [B, A, T, C]
         result = self.encoder(input)
@@ -87,9 +89,13 @@ class AttentionVAE(nn.Module):
         mu, log_var = self.encode(input)
         z = self.reparameterize(mu, log_var)
         result = self.decode(z)
+        #print("result shape", result.shape)
         
         batch_size = result.shape[0] // self.num_agents
         result = result.reshape(batch_size, self.num_agents, self.sequence_length, 2)
+        
+        #print("final result", result.shape)
+        
         return [result, mu, log_var, z]
 
     def loss_function(self,
