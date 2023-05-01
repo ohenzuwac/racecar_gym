@@ -5,6 +5,9 @@ import torch
 from torch.utils.data import DataLoader
 from attention_vae import AttentionVAE
 from pandas_dataset import CustomDataset
+from mpl_toolkits import mplot3d
+from sklearn.cluster import KMeans
+
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 
@@ -35,7 +38,7 @@ def vae_loss(x, x_hat, mean, log_var):
     KLD = - 0.5 * torch.sum(1+ log_var - mean.pow(2) - log_var.exp())
     
     #changed this from 0.1 KLD and was previously 0.01 KLD
-    return reproduction_loss + 0.01*KLD
+    return reproduction_loss + KLD
 
 
 
@@ -55,9 +58,9 @@ def train():
     batch_size = 1
     x_dim = 784
     hidden_dim = 540
-    latent_dim = 3
+    latent_dim = 2
 
-    num_csvs = 1
+    num_csvs = 10
     df_list = []
     
     for i in range(num_csvs):
@@ -85,7 +88,11 @@ def train():
                          latent_dim=latent_dim,
                          embedding_dim=hidden_dim)
 
-    lr = 1e-3
+    #lr = 1e-3
+    
+    #good for single csv
+    #lr = 1e-4
+    lr = 1e-6
 
     epochs = 1001
 
@@ -143,7 +150,7 @@ def train():
                 plt.savefig("/home/jupyter/racecar_gym/thesis_examples/VAE_losses/Loss{}.png".format(epoch))
         
         if epoch % chkpoint == 0 or epoch == 999:
-            torch.save(model,"/home/jupyter/VAEmodels/2_dim_10csv_single_agent_input/model{}.pt".format(epoch))
+            torch.save(model,"/home/jupyter/VAEmodels/04_30_models/model{}.pt".format(epoch))
             sample = model.sample(1,torch.device('cpu'))
             #sample = sample.reshape(-1, model.num_agents, model.sequence_length, 3)
             
@@ -251,11 +258,11 @@ def get_test():
     
     kwargs = {'num_workers': 1, 'pin_memory': True}
     
-    num_csvs = 1
+    num_csvs = 10
     df_list = []
     #hard coded
-    for i in range(num_csvs):
-        df = pd.read_csv(f"/home/jupyter/racecar_gym/thesis_examples/csv_files/0425/Episode{i}")
+    for i in range(13,27):
+        df = pd.read_csv(f"/home/jupyter/racecar_gym/thesis_examples/csv_files/0425_testset/Episode{i}")
         df = df.head(4000)
         df = df.iloc[::4,:]
             
@@ -313,10 +320,26 @@ def plot_traj_singles(x,model,epoch,slctr):
 
 
 
+def latent_space_plotter(z_values_x,z_values_y,z_values_z,z_values):
+    fig = plt.figure()
+    ax = plt.axes(projection='3d')
+    model = KMeans(n_clusters = 3)
+    #print(z_values)
+    model.fit(z_values)
+    lbls = model.labels_
+    #print(lbls)
+    #print(np.array([z_values_x, z_values_y, z_values_z]))
+    
+    ax.scatter3D(z_values_x, z_values_y, z_values_z, c=lbls.astype(float), cmap = 'Set3')
+    ax.figure.savefig("example_latentspace.png")
+
+
+    
+
 
 if __name__ == "__main__":
-    model, test_loader = train()
-    #model = torch.load("/home/jupyter/VAEmodels/2_dim_10csv_single_agent_input/model100.pt")
+    #model, test_loader = train()
+    model = torch.load("/home/jupyter/VAEmodels/2_dim_10csv_single_agent_input/model200.pt")
     #sample = model.sample(1,torch.device('cpu'))
     #for batch_idx, x in enumerate(test_loader):
         #result, mu, log_var = model(x)
@@ -340,16 +363,31 @@ if __name__ == "__main__":
     #gets first 6 trajectories in the test_loader
     test_traj = []
     VAE_gen = []
+    z_values_x = []
+    z_values_y = []
+    z_values_z = []
+    z_values = []
+    
     for x in test_loader:
         test_traj.append(x)
-        if len(test_traj) == 6:
+        if len(test_traj) == 1:
             break
-    #plot_traj_singles(test_traj,model,100,2)
+    #plot_traj_singles(test_traj[11:18],model,1000,2)
     
-    for agent in test_traj:
+    for agent in test_traj[11:18]:
         VAE_gen.append(model.generate(agent[...,:2]))
     
-    #plot_traj_singles(VAE_gen,model,100,1)
+    #plot_traj_singles(VAE_gen,model,1000,1)
+    
+    for x in test_loader:
+        result, mu, log_var, z = model(x[...,:2])
+        z_values_x.append(z.detach().numpy()[0][0])
+        z_values_y.append(z.detach().numpy()[0][1])
+        z_values_z.append(z.detach().numpy()[0][2])
+        z_values.append(z.detach().numpy()[0])
+    
+    latent_space_plotter(z_values_x,z_values_y,z_values_z,z_values)
+    
     
     
       
